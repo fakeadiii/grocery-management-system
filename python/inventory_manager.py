@@ -1,5 +1,5 @@
-import pandas as pd
 from sqlalchemy import create_engine
+import pandas as pd
 
 # ---------------------------
 # DATABASE CONNECTION
@@ -8,62 +8,22 @@ engine = create_engine(
     "mysql+pymysql://root:password@localhost/grocery_analytics"
 )
 
-# ---------------------------
-# INITIAL STOCK SETUP
-# ---------------------------
-def initialize_inventory():
-    products = pd.read_sql("SELECT product_id FROM dim_product", engine)
-
-    inventory = products.copy()
-    inventory["stock_qty"] = 100  # initial stock per product
-
-    inventory.to_sql(
-        "fact_inventory_snapshot",
-        engine,
-        if_exists="append",
-        index=False
-    )
-
-# ---------------------------
-# DAILY INVENTORY UPDATE
-# ---------------------------
-def update_inventory():
-    sales = pd.read_sql("""
-        SELECT date_id, product_id, store_id, SUM(quantity) as qty_sold
-        FROM fact_sales
-        GROUP BY date_id, product_id, store_id
-    """, engine)
-
-    inventory = sales.copy()
-    inventory["stock_qty"] = 100 - inventory["qty_sold"]
-
-    inventory = inventory[["date_id", "product_id", "store_id", "stock_qty"]]
-
-    inventory.to_sql(
-        "fact_inventory_snapshot",
-        engine,
-        if_exists="append",
-        index=False
-    )
-
-# ---------------------------
-# LOW STOCK ALERTS
-# ---------------------------
-def low_stock_alerts(threshold=20):
-    query = f"""
-        SELECT product_id, store_id, stock_qty
-        FROM fact_inventory_snapshot
-        WHERE stock_qty < {threshold}
+def check_inventory():
+    query = """
+    SELECT 
+        p.product_name,
+        SUM(s.quantity) AS total_sold
+    FROM fact_sales s
+    JOIN dim_product p ON s.product_id = p.product_id
+    GROUP BY p.product_name
+    ORDER BY total_sold DESC
+    LIMIT 10;
     """
-    return pd.read_sql(query, engine)
 
-# ---------------------------
-# MAIN
-# ---------------------------
+    df = pd.read_sql(query, engine)
+    print("\nTop 10 products by quantity sold:\n")
+    print(df)
+
 if __name__ == "__main__":
-    print("Updating inventory...")
-    update_inventory()
-    alerts = low_stock_alerts()
-    print("Low stock items:")
-    print(alerts.head())
-
+    print("Running inventory analysis...")
+    check_inventory()
